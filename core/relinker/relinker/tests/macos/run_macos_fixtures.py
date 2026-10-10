@@ -15,6 +15,7 @@ sys.path.insert(0, str(HERE.parent))
 import guesttools
 from import_fixture import fixture as import_fixture
 from mprotect_fixture import fixture as mprotect_fixture
+from mprotect_pages_fixture import fixture as mprotect_pages_fixture
 from tls_fixture import fixture as tls_fixture
 from test_linux_entry_argv import argv_fixture
 
@@ -207,7 +208,7 @@ def stale_libraries(libraries):
     return stale
 
 
-REPEATS = {"mprotect-slide": 16}
+REPEATS = {"mprotect-slide": 16, "mprotect-pages": 16}
 
 
 def main():
@@ -223,6 +224,7 @@ def main():
         ("import", lambda d: (d / "eboot.elf").write_bytes(import_fixture()), 0, [], False),
         ("tls", lambda d: (d / "eboot.elf").write_bytes(tls_fixture()), 136, [], False),
         ("mprotect-slide", lambda d: (d / "eboot.elf").write_bytes(mprotect_fixture()), 0, [], False),
+        ("mprotect-pages", lambda d: (d / "eboot.elf").write_bytes(mprotect_pages_fixture()), 42, [], False),
     ]
     if guesttools.available():
         cases += [("exception", compiled_exception, 43, [], False),

@@ -759,8 +759,11 @@ int DoMprotect(const void* addr, size_t len, int prot) {
     constexpr auto pageMask = static_cast<std::uintptr_t>(PS5_PAGE_SIZE - 1);
     const auto limit = std::numeric_limits<std::uintptr_t>::max();
     if (address == 0 || len == 0 || len > limit - address || address + len > limit - pageMask) throw std::invalid_argument("Invalid guest memory protection range");
-    const auto first = address & ~pageMask;
-    const auto end = (address + len + pageMask) & ~pageMask;
+    auto first = address & ~pageMask;
+    auto end = (address + len + pageMask) & ~pageMask;
+#ifdef __APPLE__
+    GuestAllocations::GuestAllocationsGuestPages_nid_postfix(address, len, PS5_PAGE_SIZE, &first, &end);
+#endif
     auto bytes = static_cast<std::size_t>(end - first);
     const void* pointer = reinterpret_cast<const void*>(first);
     const auto nativeProtection = LinuxProtFromSce(prot);

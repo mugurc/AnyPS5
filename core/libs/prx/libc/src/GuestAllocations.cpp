@@ -15,6 +15,7 @@
 #endif
 #include <windows.h>
 #elif defined(__APPLE__)
+#include "prx/libc/include/specifics/linux/ElfTypes.hpp"
 #include <mach-o/dyld.h>
 #include <mach-o/loader.h>
 #include <unistd.h>
@@ -349,6 +350,36 @@ bool GuestAllocationsOverlaps_nid_postfix(void*, const void* pointer, std::size_
         if (base + range->bytes > address) return true;
     }
     return false;
+}
+
+// The 16 KiB pages of a guest range. A relinked guest image is linked at 16 KiB aligned addresses, but dyld
+// loads it at a multiple of the host page size only (4 KiB under Rosetta); its pages are counted from where
+// its ELF address 0 ended up, as on the console, and not from the address space. Rounded on the absolute
+// address the range of a RELRO region would reach into the writable data behind it.
+void GuestAllocationsGuestPages_nid_postfix(std::uintptr_t address, std::size_t bytes, std::size_t page, std::uintptr_t* first, std::uintptr_t* end) {
+    std::uintptr_t bias = 0;
+#ifdef __APPLE__
+    struct Search {
+        std::uintptr_t address;
+        std::uintptr_t bias;
+    } search{address, 0};
+    dl_iterate_phdr([](dl_phdr_info* image, std::size_t, void* data) {
+        auto& found = *static_cast<Search*>(data);
+        for (unsigned index = 0; index < image->dlpi_phnum; ++index) {
+            const auto& header = image->dlpi_phdr[index];
+            const auto start = static_cast<std::uintptr_t>(image->dlpi_addr + header.p_vaddr);
+            if (header.p_type == PT_LOAD && found.address >= start && found.address - start < header.p_memsz) {
+                found.bias = static_cast<std::uintptr_t>(image->dlpi_addr);
+                return 1;
+            }
+        }
+        return 0;
+    }, &search);
+    bias = search.bias;
+#endif
+    const auto mask = static_cast<std::uintptr_t>(page - 1);
+    *first = bias + ((address - bias) & ~mask);
+    *end = bias + ((address + bytes - bias + mask) & ~mask);
 }
 
 // The guest rounds the ranges it protects to its 16 KiB pages. A Mach-O image is loaded at a multiple
