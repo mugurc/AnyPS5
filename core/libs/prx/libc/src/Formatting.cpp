@@ -12,12 +12,15 @@
 
 #include "prx/libc/include/General.hpp"
 #include "SceTypes.hpp"
+#include "prx/libc/include/VarArgsAbi.hpp"
 #include "prx/libc/include/FileStream.hpp"
 #include "prx/libc/include/ApplicationHeap.hpp"
 
-#ifdef _WIN32
+#if !APS5_GUEST_VA_LIST_IS_HOST
 #include "prx/libc/include/WindowsFormatting.hpp"
 #include "prx/libc/include/WindowsScanning.hpp"
+#endif
+#ifdef _WIN32
 #include "prx/libc/include/WindowsWideFormatting.hpp"
 #endif
 
@@ -64,6 +67,9 @@ int ScanGuest(const char* buffer, const char* format, bool secure, NextPointer n
         const std::string length(lengthStart, cursor);
         const char conversion = *cursor;
         if (conversion == '\0') return finish(assigned);
+#if !defined(__x86_64__)
+        if (length == "L" && std::strchr("aAeEfFgG", conversion) != nullptr) NotImplemented_nid_no_patch("x87 long double scanning");
+#endif
         std::string specifier(1, conversion);
         if (conversion == '[') {
             const char* setStart = cursor++;
@@ -140,6 +146,22 @@ int ScanGuest(const char* buffer, const char* format, bool secure, NextPointer n
 
 }
 
+#if defined(__aarch64__) && defined(__APPLE__)
+namespace {
+thread_local VaList* bridgeVaList = nullptr;
+}
+
+extern "C" void Aps5SetBridgeVaList_nid_no_patch(VaList* list) {
+    bridgeVaList = list;
+}
+
+extern "C" VaList* Aps5TakeBridgeVaList_nid_no_patch(VaList* host) {
+    VaList* list = bridgeVaList;
+    bridgeVaList = nullptr;
+    return list != nullptr ? list : host;
+}
+#endif
+
 extern "C" {
 
 int APS5_VABI swprintf_nid_postfix(wchar_t* output, size_t capacity, const wchar_t* format, ...) {
@@ -162,7 +184,7 @@ int APS5_VABI vasprintf_nid_postfix(char** destination, const char* format, VaLi
     *destination = nullptr;
     if (!format || !args) { errno = 22; return -1; }
     try {
-#ifdef _WIN32
+#if !APS5_GUEST_VA_LIST_IS_HOST
         std::string text;
         const int count = LibcDetail::FormatWindows(nullptr, 0, format, args, &text);
         const char* source = text.c_str();
@@ -188,7 +210,7 @@ int APS5_VABI vasprintf_nid_postfix(char** destination, const char* format, VaLi
 
 int APS5_VABI vfprintf_nid_postfix(FileStream* stream, const char* format, VaList* args) {
     auto* native = GetNativeStream(stream);
-#ifdef _WIN32
+#if !APS5_GUEST_VA_LIST_IS_HOST
     std::string buffer;
     const int count = LibcDetail::FormatWindows(nullptr, 0, format, args, &buffer);
     const int result = std::fwrite(buffer.data(), 1, static_cast<size_t>(count), native) ==
@@ -204,29 +226,18 @@ int APS5_VABI vfprintf_nid_postfix(FileStream* stream, const char* format, VaLis
 }
 
 int APS5_VABI fprintf_nid_postfix(FileStream* stream, const char* format, ...) {
-#ifdef _WIN32
-    __builtin_sysv_va_list args;
-    __builtin_sysv_va_start(args, format);
-#else
-    std::va_list args;
-    va_start(args, format);
-#endif
+    APS5_VA_BEGIN(format);
     const int result = vfprintf_nid_postfix(stream, format, reinterpret_cast<VaList*>(args));
-#ifdef _WIN32
-    __builtin_sysv_va_end(args);
-#else
-    va_end(args);
-#endif
+    APS5_VA_END();
     return result;
 }
 
 int APS5_VABI fscanf_nid_postfix(FileStream* stream, const char* format, ...) {
     auto* native = GetNativeStream(stream);
-#ifdef _WIN32
-    __builtin_sysv_va_list args;
-    __builtin_sysv_va_start(args, format);
+#if !APS5_GUEST_VA_LIST_IS_HOST
+    APS5_VA_BEGIN(format);
     const int result = LibcDetail::ScanFileWindows_nid_no_patch(native, format, args);
-    __builtin_sysv_va_end(args);
+    APS5_VA_END();
 #else
     std::va_list args;
     va_start(args, format);
@@ -237,37 +248,33 @@ int APS5_VABI fscanf_nid_postfix(FileStream* stream, const char* format, ...) {
     return result;
 }
 
-#ifdef _WIN32
+#if !APS5_GUEST_VA_LIST_IS_HOST
 
 int APS5_VABI printf_nid_postfix(const char* format, ...) {
-    __builtin_sysv_va_list args;
-    __builtin_sysv_va_start(args, format);
+    APS5_VA_BEGIN(format);
     const int result = LibcDetail::PrintWindows(format, args);
-    __builtin_sysv_va_end(args);
+    APS5_VA_END();
     return result;
 }
 
 int APS5_VABI libc_printf_nid_postfix(const char* format, ...) {
-    __builtin_sysv_va_list args;
-    __builtin_sysv_va_start(args, format);
+    APS5_VA_BEGIN(format);
     const int result = LibcDetail::PrintWindows(format, args);
-    __builtin_sysv_va_end(args);
+    APS5_VA_END();
     return result;
 }
 
 int APS5_VABI snprintf_nid_postfix(char* buffer, size_t size, const char* format, ...) {
-    __builtin_sysv_va_list args;
-    __builtin_sysv_va_start(args, format);
+    APS5_VA_BEGIN(format);
     const int result = LibcDetail::FormatWindows(buffer, size, format, args);
-    __builtin_sysv_va_end(args);
+    APS5_VA_END();
     return result;
 }
 
 int APS5_VABI sprintf_nid_postfix(char* buffer, const char* format, ...) {
-    __builtin_sysv_va_list args;
-    __builtin_sysv_va_start(args, format);
+    APS5_VA_BEGIN(format);
     const int result = LibcDetail::FormatWindows(buffer, SIZE_MAX, format, args);
-    __builtin_sysv_va_end(args);
+    APS5_VA_END();
     return result;
 }
 
@@ -308,7 +315,7 @@ int APS5_VABI sprintf_nid_postfix(char* buffer, const char* format, ...) {
 #endif
 
 int APS5_VABI vsscanf_nid_postfix(const char* input, const char* format, VaList* args) {
-#ifdef _WIN32
+#if !APS5_GUEST_VA_LIST_IS_HOST
     return LibcDetail::ScanWindows(input, format, args);
 #else
     std::va_list copy;
@@ -319,12 +326,11 @@ int APS5_VABI vsscanf_nid_postfix(const char* input, const char* format, VaList*
 #endif
 }
 
-#ifdef _WIN32
+#if !APS5_GUEST_VA_LIST_IS_HOST
 int APS5_VABI sscanf_nid_postfix(const char* input, const char* format, ...) {
-    __builtin_sysv_va_list args;
-    __builtin_sysv_va_start(args, format);
+    APS5_VA_BEGIN(format);
     const int result = vsscanf_nid_postfix(input, format, reinterpret_cast<VaList*>(args));
-    __builtin_sysv_va_end(args);
+    APS5_VA_END();
     return result;
 }
 #else
@@ -347,6 +353,16 @@ int APS5_VABI sscanf_s_nid_postfix(const char* buffer, const char* format, ...) 
     return result;
 }
 
+#elif !APS5_GUEST_VA_LIST_IS_HOST
+
+int APS5_VABI sscanf_s_nid_postfix(const char* buffer, const char* format, ...) {
+    APS5_VA_BEGIN(format);
+    LibcDetail::FormatArguments arguments(args);
+    const int result = ScanGuest(buffer, format, true, [&] { return arguments.Next<void*>(); }, [&] { return arguments.Next<unsigned int>(); });
+    APS5_VA_END();
+    return result;
+}
+
 #else
 
 int APS5_VABI sscanf_s_nid_postfix(const char* buffer, const char* format, ...) {
@@ -360,7 +376,7 @@ int APS5_VABI sscanf_s_nid_postfix(const char* buffer, const char* format, ...) 
 #endif
 
 int APS5_VABI vprintf_nid_postfix(const char* str, VaList* c) {
-#ifdef _WIN32
+#if !APS5_GUEST_VA_LIST_IS_HOST
     return LibcDetail::PrintWindows(str, c);
 #else
     std::va_list copy;
@@ -372,7 +388,7 @@ int APS5_VABI vprintf_nid_postfix(const char* str, VaList* c) {
 }
 
 int APS5_VABI vsprintf_nid_postfix(char* str, const char* format, VaList* args) {
-#ifdef _WIN32
+#if !APS5_GUEST_VA_LIST_IS_HOST
     return LibcDetail::FormatWindows(str, SIZE_MAX, format, args);
 #else
     std::va_list copy;
@@ -384,7 +400,7 @@ int APS5_VABI vsprintf_nid_postfix(char* str, const char* format, VaList* args) 
 }
 
 int APS5_VABI vsnprintf_nid_postfix(char* str, size_t size, const char* format, VaList* c) {
-#ifdef _WIN32
+#if !APS5_GUEST_VA_LIST_IS_HOST
     return LibcDetail::FormatWindows(str, size, format, c);
 #else
     std::va_list copy;
@@ -395,21 +411,19 @@ int APS5_VABI vsnprintf_nid_postfix(char* str, size_t size, const char* format, 
 #endif
 }
 
-#ifdef _WIN32
+#if !APS5_GUEST_VA_LIST_IS_HOST
 
 int APS5_VABI snprintf_s_nid_postfix(char* buffer, size_t size, const char* format, ...) {
-    __builtin_sysv_va_list args;
-    __builtin_sysv_va_start(args, format);
+    APS5_VA_BEGIN(format);
     const int result = LibcDetail::FormatWindows(buffer, size, format, args);
-    __builtin_sysv_va_end(args);
+    APS5_VA_END();
     return result;
 }
 
 int APS5_VABI printf_s_nid_postfix(const char* format, ...) {
-    __builtin_sysv_va_list args;
-    __builtin_sysv_va_start(args, format);
+    APS5_VA_BEGIN(format);
     const int result = LibcDetail::PrintWindows(format, args);
-    __builtin_sysv_va_end(args);
+    APS5_VA_END();
     return result;
 }
 
