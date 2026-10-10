@@ -16,6 +16,7 @@ import guesttools
 from import_fixture import fixture as import_fixture
 from mprotect_fixture import fixture as mprotect_fixture
 from mprotect_pages_fixture import fixture as mprotect_pages_fixture
+from unwind_info_fixture import fixture as unwind_info_fixture, EXPECTED as UNWIND_FRAMES_SIZE
 from tls_fixture import fixture as tls_fixture
 from test_linux_entry_argv import argv_fixture
 
@@ -225,6 +226,7 @@ def main():
         ("tls", lambda d: (d / "eboot.elf").write_bytes(tls_fixture()), 136, [], False),
         ("mprotect-slide", lambda d: (d / "eboot.elf").write_bytes(mprotect_fixture()), 0, [], False),
         ("mprotect-pages", lambda d: (d / "eboot.elf").write_bytes(mprotect_pages_fixture()), 42, [], False),
+        ("unwind-info", lambda d: (d / "eboot.elf").write_bytes(unwind_info_fixture()), UNWIND_FRAMES_SIZE, [], False),
     ]
     if guesttools.available():
         cases += [("exception", compiled_exception, 43, [], False),
