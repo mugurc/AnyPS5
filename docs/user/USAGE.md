@@ -34,7 +34,7 @@ relinker --macos --to-intel source/input.elf out/eboot
 python3 tools/package_macos_app.py --relinked out --game source --libs build/core/libs/libs --vulkan ~/VulkanSDK/<version>/macOS Title.app
 ```
 
-The bundle holds the title, the prx libraries, the Vulkan loader and MoltenVK. It writes its shader cache to `~/Library/Caches/<bundle id>` and its output to `~/Library/Logs/AnyPS5/<title id>.log`.
+The bundle holds the title, the prx libraries, the Vulkan loader and MoltenVK, and stays read-only: the title runs from `~/Library/Application Support/AnyPS5/<title id>`, where `app0` links to the bundle's game folder and the title's saves are written. The shader cache goes to `~/Library/Caches/<bundle id>` and the output to `~/Library/Logs/AnyPS5/<title id>.log`.
 
 Add `--to-intel` for Intel hosts. The output format defaults to Linux ELF regardless of the filename; `.exe` alone does not select Windows.
 

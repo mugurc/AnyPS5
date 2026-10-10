@@ -9,13 +9,17 @@ directory of a Vulkan SDK, whose loader and MoltenVK go into the bundle.
 
 The bundle runs without the SDK or environment variables:
 
-    Contents/MacOS/launch           enters the game folder (AnyPS5 maps /app0 under the working
-                                    directory) and starts eboot
+    Contents/MacOS/launch           enters the run directory and starts eboot
     Contents/MacOS/eboot, libs/     the title, the prx libraries, libvulkan and MoltenVK
+    Contents/MacOS/app0             a link to the title's files: the relinker names the guest modules
+                                    @executable_path/app0/sce_module/..., and dyld resolves that here
     Contents/Resources/game/app0    the title's files
     Contents/Resources/vulkan/icd.d MoltenVK's driver manifest
 
-The shader cache goes to ~/Library/Caches/<bundle id> and the output to ~/Library/Logs/AnyPS5."""
+AnyPS5 maps /app0 and the mount points under the working directory, so the bundle itself stays read-only: the
+run directory is ~/Library/Application Support/AnyPS5/<title id>, where app0 is a link to the bundle's game
+folder and download0 exists, and the title's saves are written. The shader cache goes to
+~/Library/Caches/<bundle id> and the output to ~/Library/Logs/AnyPS5."""
 import argparse
 import json
 import plistlib
@@ -25,12 +29,15 @@ import tempfile
 from pathlib import Path
 
 LAUNCHER = """#!/bin/sh
-# Starts the title from its game folder: AnyPS5 maps /app0 under the working directory.
+# Starts the title from a run directory next to the bundle's read-only game folder.
 here="$(cd "$(dirname "$0")" && pwd)"
-export VK_DRIVER_FILES="${{VK_DRIVER_FILES:-$here/../Resources/vulkan/icd.d/MoltenVK_icd.json}}"
+contents="$(cd "$here/.." && pwd)"
+run="$HOME/Library/Application Support/AnyPS5/{title_id}"
+export VK_DRIVER_FILES="${{VK_DRIVER_FILES:-$contents/Resources/vulkan/icd.d/MoltenVK_icd.json}}"
 export ANYPS5_SHADER_CACHE_DIR="${{ANYPS5_SHADER_CACHE_DIR:-$HOME/Library/Caches/{identifier}/shader_cache}}"
-mkdir -p "$ANYPS5_SHADER_CACHE_DIR" "$HOME/Library/Logs/AnyPS5"
-cd "$here/../Resources/game" || exit 1
+mkdir -p "$ANYPS5_SHADER_CACHE_DIR" "$HOME/Library/Logs/AnyPS5" "$run/download0"
+ln -sfn "$contents/Resources/game/app0" "$run/app0"
+cd "$run" || exit 1
 exec "$here/eboot" "$@" >> "$HOME/Library/Logs/AnyPS5/{title_id}.log" 2>&1
 """
 
@@ -83,6 +90,7 @@ def package(relinked, game, libs, vulkan, input_config, bundle):
     title_id, name, version = title_metadata(app0)
     identifier = "org.anyps5." + "".join(character for character in title_id.lower() if character.isalnum())
 
+    (macos / "app0").symlink_to(Path("..") / "Resources" / "game" / "app0")
     shutil.copy2(executable, macos / "eboot")
     (macos / "eboot").chmod(0o755)
     libraries = sorted(libs.glob("*.prx"))
