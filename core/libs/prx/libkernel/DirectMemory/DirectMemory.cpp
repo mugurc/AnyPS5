@@ -961,10 +961,13 @@ int DoMprotect(const void* addr, size_t len, int prot) {
     constexpr auto pageMask = static_cast<std::uintptr_t>(PS5_PAGE_SIZE - 1);
     const auto limit = std::numeric_limits<std::uintptr_t>::max();
     if (address == 0 || len == 0 || len > limit - address || address + len > limit - pageMask) throw std::invalid_argument("Invalid guest memory protection range");
-    const auto first = address & ~pageMask;
-    const auto end = (address + len + pageMask) & ~pageMask;
-    const auto bytes = static_cast<std::size_t>(end - first);
-    const auto* pointer = reinterpret_cast<const void*>(first);
+    auto first = address & ~pageMask;
+    auto end = (address + len + pageMask) & ~pageMask;
+#ifdef __APPLE__
+    GuestAllocations::GuestAllocationsGuestPages_nid_postfix(address, len, PS5_PAGE_SIZE, &first, &end);
+#endif
+    auto bytes = static_cast<std::size_t>(end - first);
+    const void* pointer = reinterpret_cast<const void*>(first);
     const auto nativeProtection = LinuxProtFromSce(prot);
     std::uintptr_t stackStart = 0;
     std::uintptr_t stackEnd = 0;
@@ -991,9 +994,13 @@ int DoMprotect(const void* addr, size_t len, int prot) {
     }
 #else
     mutation.RegisterMainImage();
+    mutation.TrimToRegistered(pointer, bytes);
 #endif
     mutation.Protect(pointer, bytes, (prot & 3) != 0, (prot & 2) != 0, (prot & GuestProtGpuReadWrite) != 0, [&] {
         if (mprotect(const_cast<void*>(pointer), bytes, nativeProtection) != 0) throw std::system_error(errno, std::generic_category(), "mprotect failed");
+#ifdef __APPLE__
+        GuestWriteWatch::GuestWriteWatchProtectionChanged_nid_postfix(pointer, bytes, nativeProtection);
+#endif
     });
     RecordProtection(pointer, bytes, prot);
     return 0;
