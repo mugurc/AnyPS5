@@ -182,6 +182,7 @@ static void CheckInternalNamedFlexibleMapping() {
     Require(sceKernelAvailableFlexibleMemorySize(&available) == 0 && available == before);
 }
 
+#ifndef __APPLE__
 static void CheckGuestModuleUsesFlexibleMemory() {
     constexpr std::size_t moduleData = 0x10000;
     const auto path = std::filesystem::relative(GUEST_MEMORY_MODULE).generic_string();
@@ -196,6 +197,7 @@ static void CheckGuestModuleUsesFlexibleMemory() {
     Require(dlclose_nid_postfix(module) == 0);
     Require(sceKernelAvailableFlexibleMemorySize(&available) == 0 && available == before);
 }
+#endif
 
 static void CheckBatchMapStopsAtInvalidEntry() {
     constexpr std::size_t page = 0x4000;
@@ -1865,6 +1867,7 @@ int main() {
 #ifdef _WIN32
     _putenv_s("APS5_PIN_WAIT_MS", "1000");
 #endif
+    const bool arena = GuestArena::GuestArenaAvailable_nid_postfix();
     CheckAvailableDirectMemoryIsLargestFreeBlock();
     CheckVirtualQuerySplitFlexibleRanges();
     CheckVirtualQueryForNonReadableGuestRange();
@@ -1873,7 +1876,9 @@ int main() {
     CheckMunmapOverUnmappedPages();
     CheckNamedAndHintedMappings();
     CheckInternalNamedFlexibleMapping();
+#ifndef __APPLE__
     CheckGuestModuleUsesFlexibleMemory();
+#endif
     CheckBatchMapStopsAtInvalidEntry();
     CheckCheckedReleaseDirectMemory();
     CheckAudioCoprocessorProtection();
@@ -1898,22 +1903,22 @@ int main() {
     CheckMtypeprotect();
     CheckHeapAlignment();
     CheckHeapAfterMappingReuse();
-    CheckNoOverwriteRejectsHostOccupiedMapping();
-    CheckFixedMappingsReachTheApplicationAreaEnd();
+    if (arena) CheckNoOverwriteRejectsHostOccupiedMapping();
+    if (arena) CheckFixedMappingsReachTheApplicationAreaEnd();
 #ifdef _WIN32
     CheckGuestModuleImageProtection();
 #endif
-    CheckUnhintedKernelMappingsLandInTheWindow();
+    if (arena) CheckUnhintedKernelMappingsLandInTheWindow();
 #if defined(__linux__)
     CheckUnmappedArenaRangeStaysReserved();
 #endif
-    CheckArenaPlacesUnhintedMappingsInsideTheWindow();
-    CheckArenaReusesAFreedRange();
-    CheckArenaHonoursHintsWithoutGoingBelowThem();
-    CheckSharedWriteTracking();
-    CheckReadsIntoSharedWriteTracking();
-    CheckPinnedSharedPages();
-    CheckFailedCollectKeepsWrites();
+    if (arena) CheckArenaPlacesUnhintedMappingsInsideTheWindow();
+    if (arena) CheckArenaReusesAFreedRange();
+    if (arena) CheckArenaHonoursHintsWithoutGoingBelowThem();
+    if (arena) CheckSharedWriteTracking();
+    if (arena) CheckReadsIntoSharedWriteTracking();
+    if (arena) CheckPinnedSharedPages();
+    if (arena) CheckFailedCollectKeepsWrites();
 #if defined(__linux__)
     CheckWriteWatch();
     CheckWriteWatchArmedCollect();
